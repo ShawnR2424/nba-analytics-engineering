@@ -76,3 +76,42 @@ One row per unique team ID.
 - Document applicable provider terms.
 - Do not commit API keys or credentials.
 - Keep raw API extracts out of Git initially.
+
+
+## Verified API Behavior
+
+### Teams Endpoint
+- Successfully authenticated using an API key.
+- Returned 89 team records.
+- Filtering conference to East or West returned 30 teams.
+- Current observation: 15 East, 15 West.
+- Other records include international teams.
+- Active-franchise classification requires validation.
+
+### Games Endpoint
+- Successfully retrieved 2025-26 regular-season games.
+- Request parameters:
+  - seasons[]=2025
+  - season_type=regular
+  - per_page=3
+- Response contains `data` and `meta`.
+- Each game has a unique source game ID.
+- Game records include date, teams, scores, and status.
+
+### Verified Pagination
+- Page 1: 3 games, IDs 18446819-18446821.
+- Page 1 next_cursor: 18446821.
+- Page 2: 3 games, IDs 18446822-18446824.
+- Page 2 next_cursor: 18446824.
+- No duplicate game IDs across these two pages.
+
+### Future Ingestion Requirements
+- Continue requesting pages while next_cursor exists.
+- Preserve each complete raw API response.
+- Record the request cursor and returned next_cursor.
+- Handle rate limits and HTTP failures.
+- Support re-fetching games whose status or score changes.
+- Validate full-season completeness after ingestion.
+- Review NBA Cup games separately because the API
+  distinguishes regular and ist season types.
+
