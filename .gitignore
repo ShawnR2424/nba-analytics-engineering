@@ -214,6 +214,9 @@ tempCodeRunnerFile.py
 # Marimo
 marimo/_static/
 marimo/_lsp/
+
+# macOS system files
+.DS_Store
 __marimo__/
 
 # Streamlit
