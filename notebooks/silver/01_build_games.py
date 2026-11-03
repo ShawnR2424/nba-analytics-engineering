@@ -135,18 +135,134 @@ if unique_games != 1230 or invalid_games != 0:
 
 display(silver_preview.orderBy("game_date").limit(10))
 
+# ---------------------------------------
+# 8. Silver quality gate + Delta MERGE
+# ---------------------------------------
+
+from pyspark.sql import functions as F
+
+
+def validate_silver_games(df, expected_games=1230):
+    """
+    Validate the completed 2024-25 regular season.
+    Raise ValueError if a critical check fails.
+    """
+
+    final_game = F.upper(
+        F.trim(F.col("status"))
+    ).startswith("FINAL")
+
+    missing_required = (
+        F.col("game_id").isNull()
+        | F.col("season").isNull()
+        | F.col("season_type").isNull()
+        | F.col("game_date").isNull()
+        | F.col("status").isNull()
+        | F.col("home_team_id").isNull()
+        | F.col("visitor_team_id").isNull()
+        | F.col("source_ingested_at").isNull()
+    )
+
+    invalid_final_score = (
+        F.col("home_team_score").isNull()
+        | F.col("visitor_team_score").isNull()
+        | (F.col("home_team_score") < 0)
+        | (F.col("visitor_team_score") < 0)
+        | (
+            F.col("home_team_score")
+            == F.col("visitor_team_score")
+        )
+    )
+
+    wrong_season = (
+        (F.col("season") != 2024)
+        | (F.col("season_type") != "regular")
+        | (~F.year("game_date").isin(2024, 2025))
+    )
+
+    # Calculate all metrics in one aggregation
+    metrics = df.agg(
+        F.count("*").alias("total_games"),
+        F.countDistinct("game_id").alias("unique_games"),
+
+        F.count(
+            F.when(missing_required, 1)
+        ).alias("missing_required_fields"),
+
+        F.count(
+            F.when(
+                F.col("home_team_id")
+                == F.col("visitor_team_id"), 1
+            )
+        ).alias("same_team_errors"),
+
+        F.count(
+            F.when(final_game & invalid_final_score, 1)
+        ).alias("invalid_final_scores"),
+
+        F.count(
+            F.when(wrong_season, 1)
+        ).alias("invalid_season_records")
+
+    ).first().asDict()
+
+    # Define the pass/fail conditions
+    checks = {
+        "expected_game_count":
+            metrics["total_games"] == expected_games,
+
+        "unique_game_ids":
+            metrics["unique_games"] == metrics["total_games"],
+
+        "required_fields":
+            metrics["missing_required_fields"] == 0,
+
+        "different_teams":
+            metrics["same_team_errors"] == 0,
+
+        "valid_final_scores":
+            metrics["invalid_final_scores"] == 0,
+
+        "correct_season":
+            metrics["invalid_season_records"] == 0
+    }
+
+    print("\n----- SILVER QUALITY REPORT -----")
+
+    for check, passed in checks.items():
+        print(f"{check}: {'PASS' if passed else 'FAIL'}")
+
+    print("\nMetrics:", metrics)
+
+    failures = [
+        name for name, passed in checks.items()
+        if not passed
+    ]
+
+    if failures:
+        raise ValueError(
+            f"Silver quality gate FAILED: {failures}"
+        )
+
+    print("\nSilver quality gate PASSED")
+    return metrics
+
 
 # ---------------------------------------
-# 8. Persist validated games into Silver
+# 9. Validate BEFORE writing
 # ---------------------------------------
 
-# Make the DataFrame accessible to Spark SQL
+validate_silver_games(silver_preview)
+
+
+# ---------------------------------------
+# 10. Persist validated data
+# ---------------------------------------
+
 silver_preview.createOrReplaceTempView(
     "silver_games_updates"
 )
 
-# Insert new games; update existing games
-# only when we have a newer ingested snapshot
 spark.sql("""
 MERGE INTO nba_analytics.silver.games AS target
 
@@ -162,5 +278,4 @@ WHEN NOT MATCHED
 THEN INSERT *
 """)
 
-print("Silver games MERGE completed successfully!")
-
+print("Silver MERGE completed successfully!")
