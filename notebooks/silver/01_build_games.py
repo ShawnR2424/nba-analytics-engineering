@@ -6,21 +6,52 @@ from pyspark.sql.window import Window
 
 
 # ---------------------------------------
-# 1. Read the Bronze table
+# 1. Notebook configuration
+# ---------------------------------------
+
+dbutils.widgets.dropdown(
+    "season",
+    "2023",
+    ["2023", "2024"],
+    "NBA Season"
+)
+
+SEASON = int(dbutils.widgets.get("season"))
+SEASON_TYPE = "regular"
+EXPECTED_GAMES = 1230
+
+print("--------------------------------")
+print("NBA Silver Games Transformation")
+print("--------------------------------")
+print(f"Season: {SEASON}-{str(SEASON + 1)[-2:]}")
+print(f"Season type: {SEASON_TYPE}")
+print(f"Expected games: {EXPECTED_GAMES}")
+
+
+# ---------------------------------------
+# 2. Read the Bronze table
 # ---------------------------------------
 
 bronze_df = (
     spark.table("nba_analytics.bronze.games_raw")
     .filter(
-        (F.col("season") == 2024) &
-        (F.col("season_type") == "regular") &
-        (F.col("per_page") == 50)
+        (F.col("season") == SEASON)
+        & (F.col("season_type") == SEASON_TYPE)
     )
 )
 
+bronze_pages = bronze_df.count()
+
+print(f"\nBronze pages found: {bronze_pages}")
+
+if bronze_pages == 0:
+    raise ValueError(
+        f"No Bronze records found for season {SEASON}"
+    )
+
 
 # ---------------------------------------
-# 2. Define the expected JSON structure
+# 3. Define the expected JSON structure
 # ---------------------------------------
 
 GAME_SCHEMA = """
@@ -40,23 +71,40 @@ STRUCT<
 
 
 # ---------------------------------------
-# 3. Parse the raw JSON
+# 4. Parse Bronze JSON
 # ---------------------------------------
 
 parsed_df = bronze_df.select(
     "batch_id",
     "ingested_at",
+    "records_returned",
     "season_type",
     F.sha2("payload", 256).alias("page_hash"),
     F.from_json("payload", GAME_SCHEMA).alias("body")
 )
 
-if parsed_df.filter(F.col("body").isNull()).count() > 0:
-    raise ValueError("One or more Bronze JSON payloads could not be parsed")
+# Verify that each API page was parsed
+# and contains its reported number of games.
+
+invalid_pages = parsed_df.filter(
+    F.col("body.data").isNull()
+    | F.col("records_returned").isNull()
+    | (
+        F.size("body.data")
+        != F.col("records_returned")
+    )
+).count()
+
+if invalid_pages > 0:
+    raise ValueError(
+        f"Found {invalid_pages} invalid Bronze pages"
+    )
+
+print("Bronze JSON validation: PASS")
 
 
 # ---------------------------------------
-# 4. Explode the game arrays
+# 5. Explode the game arrays
 # ---------------------------------------
 
 exploded_df = parsed_df.select(
@@ -69,7 +117,7 @@ exploded_df = parsed_df.select(
 
 
 # ---------------------------------------
-# 5. Select and type individual fields
+# 6. Flatten and type game fields
 # ---------------------------------------
 
 games_df = exploded_df.select(
@@ -86,71 +134,79 @@ games_df = exploded_df.select(
     F.col("game.visitor_team_score").alias("visitor_team_score"),
 
     F.col("ingested_at").alias("source_ingested_at"),
-    F.col("page_hash"),
-    F.col("batch_id")
+    "page_hash",
+    "batch_id"
 )
 
+raw_games = games_df.count()
+
+print(f"Raw game records: {raw_games}")
+
+# Validate IDs before deduplication.
+# Otherwise, multiple null IDs could collapse
+# into a single row and hide source errors.
+
+null_game_ids = games_df.filter(
+    F.col("game_id").isNull()
+).count()
+
+if null_game_ids > 0:
+    raise ValueError(
+        f"Found {null_game_ids} null game IDs in Bronze"
+    )
+
 
 # ---------------------------------------
-# 6. Keep the latest record per game
+# 7. Deduplicate by latest ingestion
 # ---------------------------------------
 
-game_window = Window.partitionBy("game_id").orderBy(
-    F.col("source_ingested_at").desc(),
-    F.col("page_hash").desc(),
-    F.col("batch_id").desc()
+game_window = (
+    Window
+    .partitionBy("game_id")
+    .orderBy(
+        F.col("source_ingested_at").desc(),
+        F.col("page_hash").desc(),
+        F.col("batch_id").desc()
+    )
 )
 
 silver_preview = (
     games_df
-    .withColumn("_row_number", F.row_number().over(game_window))
+    .withColumn(
+        "_row_number",
+        F.row_number().over(game_window)
+    )
     .filter(F.col("_row_number") == 1)
-    .drop("_row_number", "page_hash", "batch_id")
+    .drop(
+        "_row_number",
+        "page_hash",
+        "batch_id"
+    )
 )
 
-
-# ---------------------------------------
-# 7. Validate the transformation
-# ---------------------------------------
-
-bronze_pages = bronze_df.count()
-raw_games = games_df.count()
 unique_games = silver_preview.count()
 
-invalid_games = silver_preview.filter(
-    F.col("game_id").isNull() |
-    F.col("game_date").isNull() |
-    F.col("home_team_id").isNull() |
-    F.col("visitor_team_id").isNull() |
-    (F.col("home_team_id") == F.col("visitor_team_id"))
-).count()
+print(f"Unique Silver games: {unique_games}")
 
-print("Bronze pages:", bronze_pages)
-print("Raw games:", raw_games)
-print("Unique Silver games:", unique_games)
-print("Invalid game records:", invalid_games)
-
-if unique_games != 1230 or invalid_games != 0:
-    raise ValueError("Silver validation failed")
-
-display(silver_preview.orderBy("game_date").limit(10))
 
 # ---------------------------------------
-# 8. Silver quality gate + Delta MERGE
+# 8. Define automated quality gate
 # ---------------------------------------
 
-from pyspark.sql import functions as F
-
-
-def validate_silver_games(df, expected_games=1230):
+def validate_silver_games(df, expected_games):
     """
-    Validate the completed 2024-25 regular season.
-    Raise ValueError if a critical check fails.
+    Validate a completed NBA regular season.
+
+    Raises ValueError when a critical
+    data-quality check fails.
     """
 
-    final_game = F.upper(
-        F.trim(F.col("status"))
-    ).startswith("FINAL")
+    final_game = F.coalesce(
+        F.upper(
+            F.trim(F.col("status"))
+        ).startswith("FINAL"),
+        F.lit(False)
+    )
 
     missing_required = (
         F.col("game_id").isNull()
@@ -175,15 +231,21 @@ def validate_silver_games(df, expected_games=1230):
     )
 
     wrong_season = (
-        (F.col("season") != 2024)
-        | (F.col("season_type") != "regular")
-        | (~F.year("game_date").isin(2024, 2025))
+        (F.col("season") != SEASON)
+        | (F.col("season_type") != SEASON_TYPE)
+        | (
+            ~F.year("game_date").isin(
+                SEASON,
+                SEASON + 1
+            )
+        )
     )
 
-    # Calculate all metrics in one aggregation
     metrics = df.agg(
         F.count("*").alias("total_games"),
-        F.countDistinct("game_id").alias("unique_games"),
+
+        F.countDistinct("game_id")
+            .alias("unique_games"),
 
         F.count(
             F.when(missing_required, 1)
@@ -192,12 +254,16 @@ def validate_silver_games(df, expected_games=1230):
         F.count(
             F.when(
                 F.col("home_team_id")
-                == F.col("visitor_team_id"), 1
+                == F.col("visitor_team_id"),
+                1
             )
         ).alias("same_team_errors"),
 
         F.count(
-            F.when(final_game & invalid_final_score, 1)
+            F.when(
+                final_game & invalid_final_score,
+                1
+            )
         ).alias("invalid_final_scores"),
 
         F.count(
@@ -206,13 +272,13 @@ def validate_silver_games(df, expected_games=1230):
 
     ).first().asDict()
 
-    # Define the pass/fail conditions
     checks = {
         "expected_game_count":
             metrics["total_games"] == expected_games,
 
         "unique_game_ids":
-            metrics["unique_games"] == metrics["total_games"],
+            metrics["unique_games"]
+            == metrics["total_games"],
 
         "required_fields":
             metrics["missing_required_fields"] == 0,
@@ -230,12 +296,14 @@ def validate_silver_games(df, expected_games=1230):
     print("\n----- SILVER QUALITY REPORT -----")
 
     for check, passed in checks.items():
-        print(f"{check}: {'PASS' if passed else 'FAIL'}")
+        result = "PASS" if passed else "FAIL"
+        print(f"{check}: {result}")
 
     print("\nMetrics:", metrics)
 
     failures = [
-        name for name, passed in checks.items()
+        name
+        for name, passed in checks.items()
         if not passed
     ]
 
@@ -245,23 +313,32 @@ def validate_silver_games(df, expected_games=1230):
         )
 
     print("\nSilver quality gate PASSED")
+
     return metrics
 
 
 # ---------------------------------------
-# 9. Validate BEFORE writing
+# 9. Validate BEFORE writing to Silver
 # ---------------------------------------
 
-validate_silver_games(silver_preview)
+validate_silver_games(
+    silver_preview,
+    expected_games=EXPECTED_GAMES
+)
 
 
 # ---------------------------------------
-# 10. Persist validated data
+# 10. Create temporary SQL view
 # ---------------------------------------
 
 silver_preview.createOrReplaceTempView(
     "silver_games_updates"
 )
+
+
+# ---------------------------------------
+# 11. MERGE validated records into Silver
+# ---------------------------------------
 
 spark.sql("""
 MERGE INTO nba_analytics.silver.games AS target
@@ -278,4 +355,21 @@ WHEN NOT MATCHED
 THEN INSERT *
 """)
 
-print("Silver MERGE completed successfully!")
+print("\nSilver MERGE completed successfully!")
+
+
+# ---------------------------------------
+# 12. Display sample results
+# ---------------------------------------
+
+display(
+    silver_preview
+    .orderBy("game_date", "game_id")
+    .limit(10)
+)
+
+print(
+    f"\nSeason {SEASON}-{str(SEASON + 1)[-2:]} "
+    "transformation completed!"
+)
+
