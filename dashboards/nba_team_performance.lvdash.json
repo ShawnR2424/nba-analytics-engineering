@@ -1,0 +1,406 @@
+{
+  "datasets": [
+    {
+      "name": "daa9ad9c",
+      "displayName": "team performance",
+      "queryLines": [
+        "SELECT\n",
+        "    season,\n",
+        "\n",
+        "    CONCAT(\n",
+        "        CAST(season AS STRING),\n",
+        "        '-',\n",
+        "        RIGHT(CAST(season + 1 AS STRING), 2)\n",
+        "    ) AS season_label,\n",
+        "\n",
+        "    team_id,\n",
+        "    team_name,\n",
+        "    conference,\n",
+        "\n",
+        "    games_played,\n",
+        "    wins,\n",
+        "    losses,\n",
+        "    home_wins,\n",
+        "    away_wins,\n",
+        "\n",
+        "    ROUND(win_pct * 100, 1) AS win_pct_percent,\n",
+        "\n",
+        "    points_per_game,\n",
+        "    points_allowed_per_game,\n",
+        "    point_differential,\n",
+        "\n",
+        "    ROUND(\n",
+        "        point_differential / games_played,\n",
+        "        2\n",
+        "    ) AS avg_point_margin\n",
+        "\n",
+        "FROM nba_analytics.gold.team_season\n",
+        "\n",
+        "WHERE season IN (2023, 2024)\n",
+        "  AND season_type = 'regular'"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "1d730461",
+      "displayName": "Summary",
+      "layout": [
+        {
+          "widget": {
+            "name": "d1f7002c",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "daa9ad9c",
+                  "fields": [
+                    {
+                      "name": "sum(wins)",
+                      "expression": "SUM(`wins`)"
+                    },
+                    {
+                      "name": "team_name",
+                      "expression": "`team_name`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": false
+              },
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "sum(wins)",
+                  "displayName": "Total Wins",
+                  "scale": {
+                    "type": "quantitative",
+                    "reverse": false
+                  }
+                },
+                "y": {
+                  "fieldName": "team_name",
+                  "displayName": "Team",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "x-reversed"
+                    }
+                  }
+                },
+                "label": {
+                  "show": false
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "b0c5d18c",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "daa9ad9c",
+                  "fields": [
+                    {
+                      "name": "conference",
+                      "expression": "`conference`"
+                    },
+                    {
+                      "name": "points_allowed_per_game",
+                      "expression": "`points_allowed_per_game`"
+                    },
+                    {
+                      "name": "points_per_game",
+                      "expression": "`points_per_game`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "scatter",
+              "encodings": {
+                "x": {
+                  "fieldName": "points_allowed_per_game",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "y": {
+                  "fieldName": "points_per_game",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "conference",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 6,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "team-details",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "daa9ad9c",
+                  "fields": [
+                    {
+                      "name": "team_name",
+                      "expression": "`team_name`"
+                    },
+                    {
+                      "name": "conference",
+                      "expression": "`conference`"
+                    },
+                    {
+                      "name": "wins",
+                      "expression": "`wins`"
+                    },
+                    {
+                      "name": "losses",
+                      "expression": "`losses`"
+                    },
+                    {
+                      "name": "win_pct_percent",
+                      "expression": "`win_pct_percent`"
+                    },
+                    {
+                      "name": "home_wins",
+                      "expression": "`home_wins`"
+                    },
+                    {
+                      "name": "away_wins",
+                      "expression": "`away_wins`"
+                    },
+                    {
+                      "name": "points_per_game",
+                      "expression": "`points_per_game`"
+                    },
+                    {
+                      "name": "avg_point_margin",
+                      "expression": "`avg_point_margin`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Team Details",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "team_name"
+                  },
+                  {
+                    "fieldName": "conference"
+                  },
+                  {
+                    "fieldName": "wins"
+                  },
+                  {
+                    "fieldName": "losses"
+                  },
+                  {
+                    "fieldName": "win_pct_percent"
+                  },
+                  {
+                    "fieldName": "home_wins"
+                  },
+                  {
+                    "fieldName": "away_wins"
+                  },
+                  {
+                    "fieldName": "points_per_game"
+                  },
+                  {
+                    "fieldName": "avg_point_margin"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 12,
+            "width": 12,
+            "height": 6
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "606a983b",
+      "displayName": "Global Filters",
+      "layout": [
+        {
+          "widget": {
+            "name": "nba-season",
+            "queries": [
+              {
+                "name": "dashboards/01f1d9a3e54315c69b76593cbdb27ab2/datasets/01f1d9a3f41313a7b590e2308b3bf748_season_label",
+                "query": {
+                  "datasetName": "daa9ad9c",
+                  "fields": [
+                    {
+                      "name": "season_label",
+                      "expression": "`season_label`"
+                    },
+                    {
+                      "name": "season_label_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "selection": {
+                "defaultSelection": {
+                  "values": {
+                    "dataType": "STRING",
+                    "values": [
+                      {
+                        "value": "2024-25"
+                      }
+                    ]
+                  }
+                }
+              },
+              "disallowAll": true,
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "NBA Season",
+                  "fields": []
+                }
+              },
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "season_label",
+                    "queryName": "dashboards/01f1d9a3e54315c69b76593cbdb27ab2/datasets/01f1d9a3f41313a7b590e2308b3bf748_season_label"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 1,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "conference",
+            "queries": [
+              {
+                "name": "dashboards/01f1d9a3e54315c69b76593cbdb27ab2/datasets/01f1d9a3f41313a7b590e2308b3bf748_conference",
+                "query": {
+                  "datasetName": "daa9ad9c",
+                  "fields": [
+                    {
+                      "name": "conference",
+                      "expression": "`conference`"
+                    },
+                    {
+                      "name": "conference_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Conference",
+                  "fields": []
+                }
+              },
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "conference",
+                    "queryName": "dashboards/01f1d9a3e54315c69b76593cbdb27ab2/datasets/01f1d9a3f41313a7b590e2308b3bf748_conference"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 1,
+            "height": 2
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_GLOBAL_FILTERS",
+      "layoutVersion": "GRID_V1"
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "widgetHeaderAlignment": "ALIGNMENT_UNSPECIFIED"
+    },
+    "applyModeEnabled": false
+  }
+}
