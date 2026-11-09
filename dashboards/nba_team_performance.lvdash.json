@@ -39,12 +39,100 @@
         "WHERE season IN (2023, 2024)\n",
         "  AND season_type = 'regular'"
       ]
+    },
+    {
+      "name": "8f09eeba",
+      "displayName": "team_yoy",
+      "queryLines": [
+        "-- NBA Year-over-Year Team Performance\n",
+        "-- Grain: One row per team_id\n",
+        "-- Comparison: 2023-24 vs 2024-25 regular seasons\n",
+        "\n",
+        "WITH previous_season AS (\n",
+        "    SELECT *\n",
+        "    FROM nba_analytics.gold.team_season\n",
+        "    WHERE season = 2023\n",
+        "      AND season_type = 'regular'\n",
+        "),\n",
+        "\n",
+        "current_season AS (\n",
+        "    SELECT *\n",
+        "    FROM nba_analytics.gold.team_season\n",
+        "    WHERE season = 2024\n",
+        "      AND season_type = 'regular'\n",
+        ")\n",
+        "\n",
+        "SELECT\n",
+        "    curr.team_id,\n",
+        "    curr.team_name,\n",
+        "    curr.conference,\n",
+        "\n",
+        "    '2023-24' AS previous_season_label,\n",
+        "    '2024-25' AS current_season_label,\n",
+        "\n",
+        "    prev.wins AS wins_2023_24,\n",
+        "    curr.wins AS wins_2024_25,\n",
+        "    curr.wins - prev.wins AS wins_change,\n",
+        "\n",
+        "    prev.losses AS losses_2023_24,\n",
+        "    curr.losses AS losses_2024_25,\n",
+        "\n",
+        "    ROUND(prev.win_pct * 100, 1)\n",
+        "        AS win_pct_2023_24,\n",
+        "\n",
+        "    ROUND(curr.win_pct * 100, 1)\n",
+        "        AS win_pct_2024_25,\n",
+        "\n",
+        "    ROUND(\n",
+        "        (curr.win_pct - prev.win_pct) * 100,\n",
+        "        1\n",
+        "    ) AS win_pct_change_pp,\n",
+        "\n",
+        "    prev.points_per_game AS ppg_2023_24,\n",
+        "    curr.points_per_game AS ppg_2024_25,\n",
+        "\n",
+        "    ROUND(\n",
+        "        curr.points_per_game - prev.points_per_game,\n",
+        "        2\n",
+        "    ) AS ppg_change,\n",
+        "\n",
+        "    ROUND(\n",
+        "        curr.points_allowed_per_game\n",
+        "        - prev.points_allowed_per_game,\n",
+        "        2\n",
+        "    ) AS points_allowed_change,\n",
+        "\n",
+        "    curr.point_differential\n",
+        "        - prev.point_differential\n",
+        "        AS point_diff_change,\n",
+        "\n",
+        "    ROUND(\n",
+        "        curr.point_differential * 1.0\n",
+        "            / curr.games_played\n",
+        "        - prev.point_differential * 1.0\n",
+        "            / prev.games_played,\n",
+        "        2\n",
+        "    ) AS avg_margin_change,\n",
+        "\n",
+        "    CASE\n",
+        "        WHEN curr.wins > prev.wins\n",
+        "            THEN 'More wins'\n",
+        "        WHEN curr.wins < prev.wins\n",
+        "            THEN 'Fewer wins'\n",
+        "        ELSE 'Unchanged'\n",
+        "    END AS wins_direction\n",
+        "\n",
+        "FROM current_season curr\n",
+        "\n",
+        "INNER JOIN previous_season prev\n",
+        "    ON curr.team_id = prev.team_id\n"
+      ]
     }
   ],
   "pages": [
     {
       "name": "1d730461",
-      "displayName": "Summary",
+      "displayName": "Season Summary",
       "layout": [
         {
           "widget": {
@@ -363,6 +451,23 @@
                   ],
                   "disaggregated": false
                 }
+              },
+              {
+                "name": "dashboards/01f1d9a3e54315c69b76593cbdb27ab2/datasets/01f1dbdf481611ecbf75614587eea3bc_conference",
+                "query": {
+                  "datasetName": "8f09eeba",
+                  "fields": [
+                    {
+                      "name": "conference",
+                      "expression": "`conference`"
+                    },
+                    {
+                      "name": "conference_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
               }
             ],
             "spec": {
@@ -380,6 +485,10 @@
                   {
                     "fieldName": "conference",
                     "queryName": "dashboards/01f1d9a3e54315c69b76593cbdb27ab2/datasets/01f1d9a3f41313a7b590e2308b3bf748_conference"
+                  },
+                  {
+                    "fieldName": "conference",
+                    "queryName": "dashboards/01f1d9a3e54315c69b76593cbdb27ab2/datasets/01f1dbdf481611ecbf75614587eea3bc_conference"
                   }
                 ]
               }
@@ -394,6 +503,267 @@
         }
       ],
       "pageType": "PAGE_TYPE_GLOBAL_FILTERS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "6056425f",
+      "displayName": "YoY Comparison",
+      "layout": [
+        {
+          "widget": {
+            "name": "ecda3bac",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "8f09eeba",
+                  "fields": [
+                    {
+                      "name": "wins_direction",
+                      "expression": "`wins_direction`"
+                    },
+                    {
+                      "name": "team_name",
+                      "expression": "`team_name`"
+                    },
+                    {
+                      "name": "sum(wins_change)",
+                      "expression": "SUM(`wins_change`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "team_name",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "y-reversed"
+                    }
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(wins_change)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "wins_direction",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "82dc82b5",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "8f09eeba",
+                  "fields": [
+                    {
+                      "name": "conference",
+                      "expression": "`conference`"
+                    },
+                    {
+                      "name": "team_name",
+                      "expression": "`team_name`"
+                    },
+                    {
+                      "name": "wins_change",
+                      "expression": "`wins_change`"
+                    },
+                    {
+                      "name": "ppg_change",
+                      "expression": "`ppg_change`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "scatter",
+              "encodings": {
+                "x": {
+                  "fieldName": "wins_change",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "y": {
+                  "fieldName": "ppg_change",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "conference",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "extra": [
+                  {
+                    "fieldName": "team_name"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 6,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "detailed-yoy-comparison",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "8f09eeba",
+                  "fields": [
+                    {
+                      "name": "team_name",
+                      "expression": "`team_name`"
+                    },
+                    {
+                      "name": "conference",
+                      "expression": "`conference`"
+                    },
+                    {
+                      "name": "wins_2023_24",
+                      "expression": "`wins_2023_24`"
+                    },
+                    {
+                      "name": "wins_2024_25",
+                      "expression": "`wins_2024_25`"
+                    },
+                    {
+                      "name": "wins_change",
+                      "expression": "`wins_change`"
+                    },
+                    {
+                      "name": "win_pct_change_pp",
+                      "expression": "`win_pct_change_pp`"
+                    },
+                    {
+                      "name": "ppg_change",
+                      "expression": "`ppg_change`"
+                    },
+                    {
+                      "name": "avg_margin_change",
+                      "expression": "`avg_margin_change`"
+                    }
+                  ],
+                  "disaggregated": true,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "`wins_change`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Detailed YoY Comparison",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "team_name"
+                  },
+                  {
+                    "fieldName": "conference"
+                  },
+                  {
+                    "fieldName": "wins_2023_24"
+                  },
+                  {
+                    "fieldName": "wins_2024_25"
+                  },
+                  {
+                    "fieldName": "wins_change",
+                    "format": {
+                      "type": "number-plain",
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "type": "exact",
+                        "places": 0
+                      },
+                      "hideGroupSeparator": true
+                    }
+                  },
+                  {
+                    "fieldName": "win_pct_change_pp"
+                  },
+                  {
+                    "fieldName": "ppg_change"
+                  },
+                  {
+                    "fieldName": "avg_margin_change"
+                  }
+                ],
+                "rowOrder": [
+                  {
+                    "by": "column-reversed",
+                    "field": {
+                      "index": 4
+                    }
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 12,
+            "width": 12,
+            "height": 6
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
       "layoutVersion": "GRID_V1"
     }
   ],
