@@ -1,0 +1,73 @@
+# NBA Analytics - Season Transformation Pipeline
+#
+# Task order:
+# Silver Games -> Gold Team-Game -> Gold Team-Season
+# -> Dashboard Refresh
+
+resources:
+  jobs:
+    nba_season_pipeline:
+
+      name: NBA Analytics - Season Transformation Pipeline
+
+      max_concurrent_runs: 1
+
+      parameters:
+        - name: season
+          default: "2023"
+
+      tasks:
+
+        # -----------------------------------
+        # 1. Build validated Silver Games
+        # -----------------------------------
+
+        - task_key: build_silver_games
+
+          notebook_task:
+            notebook_path: ../notebooks/silver/01_build_games.py
+            source: WORKSPACE
+
+        # -----------------------------------
+        # 2. Build Gold Team-Game
+        # -----------------------------------
+
+        - task_key: build_gold_team_game
+
+          depends_on:
+            - task_key: build_silver_games
+
+          run_if: ALL_SUCCESS
+
+          notebook_task:
+            notebook_path: ../notebooks/gold/01_build_team_game.py
+            source: WORKSPACE
+
+        # -----------------------------------
+        # 3. Build Gold Team-Season
+        # -----------------------------------
+
+        - task_key: build_gold_team_season
+
+          depends_on:
+            - task_key: build_gold_team_game
+
+          run_if: ALL_SUCCESS
+
+          notebook_task:
+            notebook_path: ../notebooks/gold/02_build_team_season.py
+            source: WORKSPACE
+
+        # -----------------------------------
+        # 4. Refresh published NBA dashboard
+        # -----------------------------------
+
+        - task_key: refresh_nba_dashboard
+
+          depends_on:
+            - task_key: build_gold_team_season
+
+          run_if: ALL_SUCCESS
+
+          dashboard_task:
+            dashboard_id: ${var.dashboard_id}

@@ -1,0 +1,24 @@
+# NBA Analytics Engineering
+# Databricks Declarative Automation Bundle
+
+bundle:
+  name: nba_analytics_engineering
+
+include:
+  - resources/*.yml
+
+variables:
+  dashboard_id:
+    description: Existing published NBA dashboard ID
+
+# Never deploy local credentials or Python environments.
+sync:
+  exclude:
+    - .env
+    - .venv/**
+    - .git/**
+    - "**/__pycache__/**"
+
+targets:
+  dev:
+    default: true
